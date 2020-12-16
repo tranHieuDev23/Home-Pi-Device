@@ -1,10 +1,10 @@
 #include <Arduino.h>
 #include <WiFi.h>
-#include "embedded/embeddedLight.h"
+#include "mqtt/MqttLight.h"
 
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
-EmbeddedLight light(mqttClient, 0);
+MqttLight light(mqttClient, 0);
 const char *ssid = "Wifi Hieu 2.4G";
 const char *psk = "tranminhhieu23";
 const char *broker = "broker.hivemq.com";

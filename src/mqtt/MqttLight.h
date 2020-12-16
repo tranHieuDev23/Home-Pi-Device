@@ -1,16 +1,16 @@
-#ifndef EMBEDDED_LIGHT_H
-#define EMBEDDED_LIGHT_H
+#ifndef MQTT_LIGHT_H
+#define MQTT_LIGHT_H
 
-#include "embedded.h"
+#include "MqttDevice.h"
 #include <ArduinoJson.h>
 
-class EmbeddedLight : public EmbeddedDevice
+class MqttLight : public MqttDevice
 {
 private:
     const int lightPin;
 
 public:
-    EmbeddedLight(PubSubClient &mqttClient, int lightPin) : EmbeddedDevice(mqttClient), lightPin(lightPin)
+    MqttLight(PubSubClient &mqttClient, int lightPin) : MqttDevice(mqttClient), lightPin(lightPin)
     {
         pinMode(lightPin, OUTPUT);
     }

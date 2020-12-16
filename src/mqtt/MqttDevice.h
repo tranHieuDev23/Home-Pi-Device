@@ -1,5 +1,5 @@
-#ifndef EMBEDDED_H
-#define EMBEDDED_H
+#ifndef MQTT_DEVICE_H
+#define MQTT_DEVICE_H
 #include <vector>
 #include <functional>
 #include <PubSubClient.h>
@@ -38,7 +38,7 @@ public:
     }
 };
 
-class EmbeddedDevice
+class MqttDevice
 {
 private:
     PubSubClient mqttClient;
@@ -88,7 +88,7 @@ private:
     }
 
 public:
-    EmbeddedDevice(PubSubClient &_mqttClient)
+    MqttDevice(PubSubClient &_mqttClient)
     {
         mqttClient = _mqttClient;
         subscribedTopics = std::vector<SubscribeHandler>();

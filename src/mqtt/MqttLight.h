@@ -15,11 +15,11 @@ public:
         pinMode(lightPin, OUTPUT);
     }
 
-    void subscribeToggleTopic(char *topic)
+    void subscribeToggleTopic(const std::string &topic)
     {
-        subscribeTopic(SubscribeHandler(topic, [this](char *payload, unsigned int length) {
-            DynamicJsonDocument doc(128);
-            deserializeJson(doc, payload);
+        subscribeTopic(SubscribeHandler(topic, [this](const std::string &payload) {
+            DynamicJsonDocument doc(1024);
+            deserializeJson(doc, payload.c_str());
             const bool on = doc["on"].as<bool>();
             if (on)
             {

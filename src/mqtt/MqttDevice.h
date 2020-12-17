@@ -1,38 +1,40 @@
 #ifndef MQTT_DEVICE_H
 #define MQTT_DEVICE_H
 #include <vector>
+#include <memory>
 #include <functional>
 #include <PubSubClient.h>
 
-typedef std::function<void(char *, unsigned int)> SubHandleFunc;
-typedef std::function<char *()> PubMessageFunc;
+typedef std::shared_ptr<std::string> strp;
+typedef std::function<void(const std::string)> SubHandleFunc;
+typedef std::function<strp()> PubMessageFunc;
 
 class SubscribeHandler
 {
 public:
-    const char *topic;
+    const std::string topic;
     const SubHandleFunc onMessage;
 
-    SubscribeHandler(char *topic, SubHandleFunc onMessage)
+    SubscribeHandler(std::string topic, SubHandleFunc onMessage)
         : topic(topic), onMessage(onMessage) {}
 
-    const void callOnMessage(char *payload, unsigned int length) const
+    const void callOnMessage(const std::string &payload) const
     {
-        onMessage(payload, length);
+        onMessage(payload);
     }
 };
 
 class IntervalPublish
 {
 public:
-    const char *topic;
+    const std::string topic;
     const long publishInterval;
     const PubMessageFunc onPublishTime;
 
-    IntervalPublish(char *topic, long publishInterval, PubMessageFunc onPublishTime)
+    IntervalPublish(std::string topic, long publishInterval, PubMessageFunc onPublishTime)
         : topic(topic), publishInterval(publishInterval), onPublishTime(onPublishTime) {}
 
-    char *callOnPublishTime() const
+    strp callOnPublishTime() const
     {
         return onPublishTime();
     }
@@ -45,11 +47,15 @@ private:
     std::vector<SubscribeHandler> subscribedTopics;
     std::vector<IntervalPublish> intervalPublishTopics;
     std::vector<long> lastPublishTimes;
+    std::shared_ptr<std::string> mqttBroker;
+    long lastMqttReconnectTime;
 
     void reconnectedMqtt()
     {
-        while (!mqttClient.connected())
+        long currentTime = millis();
+        if (currentTime > lastMqttReconnectTime + 5000)
         {
+            lastMqttReconnectTime = currentTime;
             String clientId = "HomePiClient-";
             clientId += String(random(0xffff), HEX);
             Serial.println("Trying to connect with clientId=" + clientId);
@@ -63,7 +69,6 @@ private:
                 Serial.print("Failed to connect to MQTT broker, rc=");
                 Serial.print(mqttClient.state());
                 Serial.println(". Try again in 5 seconds...");
-                delay(5000);
             }
         }
     }
@@ -72,17 +77,18 @@ private:
     {
         for (const auto &item : subscribedTopics)
         {
-            mqttClient.subscribe(item.topic);
+
+            mqttClient.subscribe(item.topic.c_str());
         }
     }
 
-    void onMessage(char *topic, byte *payload, unsigned int length)
+    void onMessage(const std::string &topic, const std::string &payload)
     {
         for (const auto &item : subscribedTopics)
         {
-            if (strcmp(item.topic, topic) == 0)
+            if (item.topic == topic)
             {
-                item.callOnMessage((char *)payload, length);
+                item.callOnMessage(payload);
             }
         }
     }
@@ -94,58 +100,77 @@ public:
         subscribedTopics = std::vector<SubscribeHandler>();
         intervalPublishTopics = std::vector<IntervalPublish>();
         lastPublishTimes = std::vector<long>();
+        mqttBroker = nullptr;
+        lastMqttReconnectTime = 0;
     }
 
-    void connectMqttBroker(const char *broker, uint16_t port)
+    void connectMqttBroker(const std::string &broker, uint16_t port)
     {
-        mqttClient.setServer(broker, port);
+        mqttBroker = std::make_shared<std::string>(std::string(broker));
+        mqttClient.setServer(mqttBroker->c_str(), port);
         mqttClient.setCallback([this](char *topic, byte *payload, unsigned int length) {
-            onMessage(topic, payload, length);
+            const std::string topicStr(topic);
+            std::string payloadStr = "";
+            payloadStr.reserve(length);
+            for (size_t i = 0; i < length; i++)
+            {
+                payloadStr.push_back((char)payload[i]);
+            }
+            onMessage(topicStr, payloadStr);
         });
     }
 
     void loop()
     {
+        if (mqttBroker == nullptr)
+        {
+            return;
+        }
         if (!mqttClient.connected())
         {
             reconnectedMqtt();
         }
-        mqttClient.loop();
-        long currentTime = millis();
-        for (size_t i = 0; i < intervalPublishTopics.size(); i++)
+        if (mqttClient.connected())
         {
-            const IntervalPublish &item = intervalPublishTopics[i];
-            if (currentTime > item.publishInterval + lastPublishTimes[i])
+            mqttClient.loop();
+            long currentTime = millis();
+            for (size_t i = 0; i < intervalPublishTopics.size(); i++)
             {
-                char *message = item.callOnPublishTime();
-                if (message == nullptr)
+                const IntervalPublish &item = intervalPublishTopics[i];
+                if (currentTime > item.publishInterval + lastPublishTimes[i])
                 {
-                    continue;
+                    strp message = item.callOnPublishTime();
+                    if (message == nullptr)
+                    {
+                        continue;
+                    }
+                    publishTopic(item.topic, *message);
+                    lastPublishTimes[i] = currentTime;
                 }
-                publishTopic(item.topic, message);
-                lastPublishTimes[i] = currentTime;
             }
         }
     }
 
-    void subscribeTopic(const SubscribeHandler &item)
+    int subscribeTopic(const SubscribeHandler &item)
     {
         subscribedTopics.push_back(item);
         if (mqttClient.connected())
         {
-            mqttClient.subscribe(item.topic);
+            mqttClient.subscribe(item.topic.c_str());
         }
+        return subscribedTopics.size();
     }
 
-    void publishTopic(const char *topic, const char *payload)
+    void publishTopic(const std::string &topic, const std::string &payload)
     {
-        mqttClient.publish(topic, payload);
+        mqttClient.publish(topic.c_str(), payload.c_str());
     }
 
-    void addIntervalPublish(const IntervalPublish &item)
+    int addIntervalPublish(const IntervalPublish &item)
     {
         intervalPublishTopics.push_back(item);
         lastPublishTimes.push_back(-1);
+        return intervalPublishTopics.size();
     }
 };
 

@@ -7,18 +7,24 @@
 class MqttLight : public MqttDevice
 {
 private:
-    const int lightPin;
+    const uint8_t lightPin;
+    std::string statusTopic;
 
 public:
-    MqttLight(PubSubClient &mqttClient, int lightPin) : MqttDevice(mqttClient), lightPin(lightPin)
+    MqttLight(PubSubClient &mqttClient, uint8_t lightPin) : MqttDevice(mqttClient), lightPin(lightPin)
     {
         pinMode(lightPin, OUTPUT);
     }
 
-    void subscribeToggleTopic(const std::string &topic)
+    void setStatusTopic(const std::string &topic)
+    {
+        statusTopic = topic;
+    }
+
+    void subscribeCommandTopic(const std::string &topic)
     {
         subscribeTopic(SubscribeHandler(topic, [this](const std::string &payload) {
-            DynamicJsonDocument doc(1024);
+            DynamicJsonDocument doc(256);
             deserializeJson(doc, payload.c_str());
             const bool on = doc["on"].as<bool>();
             if (on)
@@ -29,6 +35,11 @@ public:
             {
                 turnOff();
             }
+            DynamicJsonDocument statusDoc(256);
+            statusDoc["isOn"] = on;
+            std::string statusMessage = "";
+            serializeJson(statusDoc, statusMessage);
+            publishTopic(statusTopic, statusMessage);
         }));
     }
 

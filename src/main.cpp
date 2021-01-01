@@ -1,6 +1,6 @@
 #include "HomePiLight.h"
 
-HomePiLight light(0);
+HomePiLight light("light:12345", 0);
 
 void setup()
 {

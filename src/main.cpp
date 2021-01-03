@@ -1,14 +1,18 @@
-#include "HomePiLight.h"
+#include "HomePiDevice.h"
+#include "mqtt/MqttLight.h"
 
-HomePiLight light("light:12345", 0);
+auto wifiClient = std::make_shared<WiFiClient>();
+auto mqttClient = std::make_shared<PubSubClient>(*wifiClient);
+auto light = std::make_shared<MqttLight>(mqttClient, 0);
+HomePiDevice hpDevice("light:12345", light);
 
 void setup()
 {
   Serial.begin(115200);
-  light.setup();
+  hpDevice.setup();
 }
 
 void loop()
 {
-  light.loop();
+  hpDevice.loop();
 }

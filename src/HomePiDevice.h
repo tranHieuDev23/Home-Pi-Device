@@ -2,26 +2,23 @@
 #define HOME_PI_DEVICE_H
 
 #include <memory>
-#include <WiFi.h>
+#include <ArduinoJson.h>
 #include <BluetoothSerial.h>
-#include <PubSubClient.h>
-#include "mqtt/MqttLight.h"
+#include "mqtt/MqttDevice.h"
 #include "utils/WifiUtils.h"
 
 #define BT_BUFFER_MAX_SIZE 4096
 #define BT_BUFFER_TIMEOUT 3000
 #define TIMEOUT 30000
 
-class HomePiLight
+class HomePiDevice
 {
 private:
     std::string btBuffer;
     long lastBtReadTime;
     const std::string deviceId;
-    std::shared_ptr<WiFiClient> wifiClient;
     std::shared_ptr<BluetoothSerial> btClient;
-    std::shared_ptr<PubSubClient> mqttClient;
-    std::shared_ptr<MqttLight> light;
+    std::shared_ptr<MqttDevice> device;
 
     void readBluetooth()
     {
@@ -116,7 +113,7 @@ private:
         DynamicJsonDocument doc(1024);
         doc["reqId"] = reqId;
         doc["success"] = success;
-        doc["connected"] = (wifiClient->connected() != 0);
+        doc["connected"] = WiFi.isConnected();
         std::string response = "";
         serializeJson(doc, response);
         btClient->println(response.c_str());
@@ -175,32 +172,29 @@ private:
     bool setRegistrationData(const std::string &commandTopic, const std::string &statusTopic, const std::string &token)
     {
         Serial.println("Setting registration data");
-        light->setCommandTopic(commandTopic);
-        light->setStatusTopic(statusTopic);
+        device->setCommandTopic(commandTopic);
+        device->setStatusTopic(statusTopic);
         return true;
     }
 
 public:
-    HomePiLight(const std::string &deviceId, int lightPin) : deviceId(deviceId)
+    HomePiDevice(const std::string &deviceId, std::shared_ptr<MqttDevice> device) : deviceId(deviceId), device(device)
     {
         btBuffer = "";
         lastBtReadTime = 0;
-        wifiClient = std::make_shared<WiFiClient>();
         btClient = std::make_shared<BluetoothSerial>();
-        mqttClient = std::make_shared<PubSubClient>(*wifiClient);
-        light = std::make_shared<MqttLight>(mqttClient, lightPin);
     }
 
     void setup()
     {
         btClient->begin("Home Pi Light");
-        light->setMqttBroker("broker.hivemq.com", 1883);
+        device->setMqttBroker("broker.hivemq.com", 1883);
     }
 
     void loop()
     {
         readBluetooth();
-        light->loop();
+        device->loop();
     }
 };
 

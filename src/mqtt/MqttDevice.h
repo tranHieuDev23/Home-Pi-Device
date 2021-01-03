@@ -1,53 +1,15 @@
 #ifndef MQTT_DEVICE_H
 #define MQTT_DEVICE_H
-#include <vector>
 #include <memory>
-#include <functional>
 #include <PubSubClient.h>
-
-typedef std::shared_ptr<std::string> strp;
-typedef std::function<void(const std::string)> SubHandleFunc;
-typedef std::function<strp()> PubMessageFunc;
-
-class SubscribeHandler
-{
-public:
-    const std::string topic;
-    const SubHandleFunc onMessage;
-
-    SubscribeHandler(std::string topic, SubHandleFunc onMessage)
-        : topic(topic), onMessage(onMessage) {}
-
-    const void callOnMessage(const std::string &payload) const
-    {
-        onMessage(payload);
-    }
-};
-
-class IntervalPublish
-{
-public:
-    const std::string topic;
-    const long publishInterval;
-    const PubMessageFunc onPublishTime;
-
-    IntervalPublish(std::string topic, long publishInterval, PubMessageFunc onPublishTime)
-        : topic(topic), publishInterval(publishInterval), onPublishTime(onPublishTime) {}
-
-    strp callOnPublishTime() const
-    {
-        return onPublishTime();
-    }
-};
 
 class MqttDevice
 {
 private:
-    PubSubClient mqttClient;
-    std::vector<SubscribeHandler> subscribedTopics;
-    std::vector<IntervalPublish> intervalPublishTopics;
-    std::vector<long> lastPublishTimes;
+    const std::shared_ptr<PubSubClient> mqttClient;
     std::shared_ptr<std::string> mqttBroker;
+    std::shared_ptr<std::string> commandTopic;
+    std::shared_ptr<std::string> statusTopic;
     long lastMqttReconnectTime;
 
     void reconnectedMqtt()
@@ -59,65 +21,45 @@ private:
             String clientId = "HomePiClient-";
             clientId += String(random(0xffff), HEX);
             Serial.println("Trying to connect with clientId=" + clientId);
-            if (mqttClient.connect(clientId.c_str()))
+            if (mqttClient->connect(clientId.c_str()))
             {
-                Serial.print("Successfully connected to MQTT broker, subscribing to all topic...");
-                subscribeAllTopic();
+                Serial.println("Successfully connected to MQTT broker, subscribing to all topic...");
+                if (commandTopic != nullptr)
+                {
+                    mqttClient->subscribe(commandTopic->c_str());
+                }
             }
             else
             {
                 Serial.print("Failed to connect to MQTT broker, rc=");
-                Serial.print(mqttClient.state());
+                Serial.print(mqttClient->state());
                 Serial.println(". Try again in 5 seconds...");
             }
         }
     }
 
-    void subscribeAllTopic()
-    {
-        for (const auto &item : subscribedTopics)
-        {
-
-            mqttClient.subscribe(item.topic.c_str());
-        }
-    }
-
-    void onMessage(const std::string &topic, const std::string &payload)
-    {
-        for (const auto &item : subscribedTopics)
-        {
-            if (item.topic == topic)
-            {
-                item.callOnMessage(payload);
-            }
-        }
-    }
-
 public:
-    MqttDevice(PubSubClient &_mqttClient)
+    MqttDevice(const std::shared_ptr<PubSubClient> &mqttClient) : mqttClient(mqttClient)
     {
-        mqttClient = _mqttClient;
-        subscribedTopics = std::vector<SubscribeHandler>();
-        intervalPublishTopics = std::vector<IntervalPublish>();
-        lastPublishTimes = std::vector<long>();
         mqttBroker = nullptr;
+        commandTopic = nullptr;
+        statusTopic = nullptr;
         lastMqttReconnectTime = 0;
-    }
-
-    void connectMqttBroker(const std::string &broker, uint16_t port)
-    {
-        mqttBroker = std::make_shared<std::string>(std::string(broker));
-        mqttClient.setServer(mqttBroker->c_str(), port);
-        mqttClient.setCallback([this](char *topic, byte *payload, unsigned int length) {
-            const std::string topicStr(topic);
+        mqttClient->setCallback([this](char *topic, byte *payload, unsigned int length) {
             std::string payloadStr = "";
             payloadStr.reserve(length);
             for (size_t i = 0; i < length; i++)
             {
                 payloadStr.push_back((char)payload[i]);
             }
-            onMessage(topicStr, payloadStr);
+            onCommand(payloadStr);
         });
+    }
+
+    void setMqttBroker(const std::string &mqttBroker, const int &port)
+    {
+        this->mqttBroker = std::make_shared<std::string>(mqttBroker);
+        mqttClient->setServer(this->mqttBroker->c_str(), port);
     }
 
     void loop()
@@ -126,52 +68,44 @@ public:
         {
             return;
         }
-        if (!mqttClient.connected())
+        if (!mqttClient->connected())
         {
             reconnectedMqtt();
         }
-        if (mqttClient.connected())
+        if (mqttClient->connected())
         {
-            mqttClient.loop();
-            long currentTime = millis();
-            for (size_t i = 0; i < intervalPublishTopics.size(); i++)
-            {
-                const IntervalPublish &item = intervalPublishTopics[i];
-                if (currentTime > item.publishInterval + lastPublishTimes[i])
-                {
-                    strp message = item.callOnPublishTime();
-                    if (message == nullptr)
-                    {
-                        continue;
-                    }
-                    publishTopic(item.topic, *message);
-                    lastPublishTimes[i] = currentTime;
-                }
-            }
+            mqttClient->loop();
         }
     }
 
-    int subscribeTopic(const SubscribeHandler &item)
+    void setCommandTopic(const std::string &topic)
     {
-        subscribedTopics.push_back(item);
-        if (mqttClient.connected())
+        if (mqttClient->connected() && commandTopic != nullptr)
         {
-            mqttClient.subscribe(item.topic.c_str());
+            mqttClient->unsubscribe(commandTopic->c_str());
         }
-        return subscribedTopics.size();
+        commandTopic = std::make_shared<std::string>(topic);
+        if (mqttClient->connected())
+        {
+            mqttClient->subscribe(commandTopic->c_str());
+        }
     }
 
-    void publishTopic(const std::string &topic, const std::string &payload)
+    void setStatusTopic(const std::string &topic)
     {
-        mqttClient.publish(topic.c_str(), payload.c_str());
+        statusTopic = std::make_shared<std::string>(topic);
     }
 
-    int addIntervalPublish(const IntervalPublish &item)
+    void publishStatus(const std::string &payload)
     {
-        intervalPublishTopics.push_back(item);
-        lastPublishTimes.push_back(-1);
-        return intervalPublishTopics.size();
+        if (statusTopic == nullptr)
+        {
+            return;
+        }
+        mqttClient->publish(statusTopic->c_str(), payload.c_str());
     }
+
+    void virtual onCommand(const std::string &payload) = 0;
 };
 
 #endif

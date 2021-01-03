@@ -20,7 +20,7 @@ private:
 
     void onBluetoothMessage(const std::string &message)
     {
-        Serial.println(("onBluetoothMessage(\"" + message + "\")").c_str());
+        Serial.println(("bluetooth message " + message + "").c_str());
 
         DynamicJsonDocument doc(1024);
         deserializeJson(doc, message.c_str());
@@ -38,21 +38,12 @@ private:
             const std::string psk = doc["psk"].as<std::string>();
             success = connectWiFi(ssid, psk, TIMEOUT);
         }
-        if (action == "registerBroker")
+        if (action == "register")
         {
-            const std::string brokerAddress = doc["broker"].as<std::string>();
-            const int brokerPort = doc["port"].as<int>();
-            success = connectMqttBroker(brokerAddress, brokerPort, TIMEOUT);
-        }
-        if (action == "commandTopic")
-        {
-            const std::string topic = doc["topic"].as<std::string>();
-            success = subscribeCommandTopic(topic, TIMEOUT);
-        }
-        if (action == "statusTopic")
-        {
-            const std::string topic = doc["topic"].as<std::string>();
-            success = setStatusTopic(topic, TIMEOUT);
+            const std::string commandTopic = doc["commandTopic"].as<std::string>();
+            const std::string statusTopic = doc["statusTopic"].as<std::string>();
+            const std::string token = doc["token"].as<std::string>();
+            success = setRegistrationData(commandTopic, statusTopic, token);
         }
         responseRequestSuccess(reqId, success);
     }
@@ -107,44 +98,27 @@ private:
         }
     }
 
-    bool connectMqttBroker(const std::string &broker, const int &port, long timeout)
+    bool setRegistrationData(const std::string &commandTopic, const std::string &statusTopic, const std::string &token)
     {
-        Serial.print("Connecting to MQTT broker=");
-        Serial.print(broker.c_str());
-        Serial.print(", port=");
-        Serial.println(port);
-        light->connectMqttBroker(broker, port);
-        return true;
-    }
-
-    bool subscribeCommandTopic(const std::string &topic, long timeout)
-    {
-        Serial.print("Subscribing to MQTT command topic=");
-        Serial.print(topic.c_str());
-        light->subscribeCommandTopic(topic);
-        return true;
-    }
-
-    bool setStatusTopic(const std::string &topic, long timeout)
-    {
-        Serial.print("Set MQTT status topic=");
-        Serial.print(topic.c_str());
-        light->setStatusTopic(topic);
+        Serial.println("Setting registration data");
+        light->setCommandTopic(commandTopic);
+        light->setStatusTopic(statusTopic);
         return true;
     }
 
 public:
     HomePiLight(const std::string &deviceId, int lightPin) : deviceId(deviceId)
     {
-        wifiClient = std::make_shared<WiFiClient>(WiFiClient());
-        btClient = std::make_shared<BluetoothSerial>(BluetoothSerial());
-        mqttClient = std::make_shared<PubSubClient>(PubSubClient(*wifiClient));
-        light = std::make_shared<MqttLight>(MqttLight(*mqttClient, lightPin));
+        wifiClient = std::make_shared<WiFiClient>();
+        btClient = std::make_shared<BluetoothSerial>();
+        mqttClient = std::make_shared<PubSubClient>(*wifiClient);
+        light = std::make_shared<MqttLight>(mqttClient, lightPin);
     }
 
     void setup()
     {
         btClient->begin("Home Pi Light");
+        light->setMqttBroker("broker.hivemq.com", 1883);
     }
 
     void loop()

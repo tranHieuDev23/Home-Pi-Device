@@ -6,17 +6,49 @@
 #include <BluetoothSerial.h>
 #include <PubSubClient.h>
 #include "mqtt/MqttLight.h"
+#include "utils/WifiUtils.h"
 
+#define BT_BUFFER_MAX_SIZE 4096
+#define BT_BUFFER_TIMEOUT 3000
 #define TIMEOUT 30000
 
 class HomePiLight
 {
 private:
+    std::string btBuffer;
+    long lastBtReadTime;
     const std::string deviceId;
     std::shared_ptr<WiFiClient> wifiClient;
     std::shared_ptr<BluetoothSerial> btClient;
     std::shared_ptr<PubSubClient> mqttClient;
     std::shared_ptr<MqttLight> light;
+
+    void readBluetooth()
+    {
+        if (!btClient->available())
+        {
+            return;
+        }
+        long currentTime = millis();
+        if (currentTime - lastBtReadTime > BT_BUFFER_TIMEOUT)
+        {
+            btBuffer.clear();
+        }
+        lastBtReadTime = currentTime;
+        while (btClient->available())
+        {
+            char nextCharacter = btClient->read();
+            if (nextCharacter == '\n')
+            {
+                onBluetoothMessage(btBuffer);
+                btBuffer.clear();
+            }
+            else if (btBuffer.size() < BT_BUFFER_MAX_SIZE)
+            {
+                btBuffer.push_back(nextCharacter);
+            }
+        }
+    }
 
     void onBluetoothMessage(const std::string &message)
     {
@@ -31,12 +63,22 @@ private:
             responseDeviceId(reqId, true);
             return;
         }
+        if (action == "wifiStatus")
+        {
+            responseWifiStatus(reqId, true);
+            return;
+        }
+        if (action == "scanWifi")
+        {
+            scanWifi(reqId, true);
+            return;
+        }
         bool success = false;
         if (action == "connectWifi")
         {
             const std::string ssid = doc["ssid"].as<std::string>();
             const std::string psk = doc["psk"].as<std::string>();
-            success = connectWiFi(ssid, psk, TIMEOUT);
+            success = connectWifi(ssid, psk, TIMEOUT);
         }
         if (action == "register")
         {
@@ -69,7 +111,39 @@ private:
         btClient->println(response.c_str());
     }
 
-    bool connectWiFi(const std::string &ssid, const std::string &psk, long timeout)
+    void responseWifiStatus(const std::string &reqId, const bool &success)
+    {
+        DynamicJsonDocument doc(1024);
+        doc["reqId"] = reqId;
+        doc["success"] = success;
+        doc["connected"] = (wifiClient->connected() != 0);
+        std::string response = "";
+        serializeJson(doc, response);
+        btClient->println(response.c_str());
+    }
+
+    void scanWifi(const std::string &reqId, const bool &success)
+    {
+        DynamicJsonDocument doc(1024);
+        doc["reqId"] = reqId;
+        doc["success"] = success;
+        auto results = scanWiFiNetworks();
+        JsonArray networks = doc.createNestedArray("networks");
+        for (const auto &item : results)
+        {
+            Serial.print(item.ssid.c_str());
+            Serial.print(" ");
+            Serial.println(item.open);
+            JsonObject itemObj = networks.createNestedObject();
+            itemObj["ssid"] = item.ssid;
+            itemObj["open"] = item.open;
+        }
+        std::string response = "";
+        serializeJson(doc, response);
+        btClient->println(response.c_str());
+    }
+
+    bool connectWifi(const std::string &ssid, const std::string &psk, long timeout)
     {
         Serial.print("Trying to connect to ssid=");
         Serial.print(ssid.c_str());
@@ -109,6 +183,8 @@ private:
 public:
     HomePiLight(const std::string &deviceId, int lightPin) : deviceId(deviceId)
     {
+        btBuffer = "";
+        lastBtReadTime = 0;
         wifiClient = std::make_shared<WiFiClient>();
         btClient = std::make_shared<BluetoothSerial>();
         mqttClient = std::make_shared<PubSubClient>(*wifiClient);
@@ -123,11 +199,7 @@ public:
 
     void loop()
     {
-        if (btClient->available())
-        {
-            String message = btClient->readStringUntil('\n');
-            onBluetoothMessage(message.c_str());
-        }
+        readBluetooth();
         light->loop();
     }
 };

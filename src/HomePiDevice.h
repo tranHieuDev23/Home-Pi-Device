@@ -53,21 +53,20 @@ private:
 
         DynamicJsonDocument doc(1024);
         deserializeJson(doc, message.c_str());
-        const std::string reqId = doc["reqId"].as<std::string>();
         const std::string action = doc["action"].as<std::string>();
         if (action == "getId")
         {
-            responseDeviceId(reqId, true);
+            responseDeviceId(true);
             return;
         }
         if (action == "wifiStatus")
         {
-            responseWifiStatus(reqId, true);
+            responseWifiStatus(true);
             return;
         }
         if (action == "scanWifi")
         {
-            scanWifi(reqId, true);
+            scanWifi(true);
             return;
         }
         bool success = false;
@@ -84,23 +83,21 @@ private:
             const std::string token = doc["token"].as<std::string>();
             success = setRegistrationData(commandTopic, statusTopic, token);
         }
-        responseRequestSuccess(reqId, success);
+        responseRequestSuccess(success);
     }
 
-    void responseRequestSuccess(const std::string &reqId, const bool &success)
+    void responseRequestSuccess(const bool &success)
     {
         DynamicJsonDocument doc(1024);
-        doc["reqId"] = reqId;
         doc["success"] = success;
         std::string response = "";
         serializeJson(doc, response);
         btClient->println(response.c_str());
     }
 
-    void responseDeviceId(const std::string &reqId, const bool &success)
+    void responseDeviceId(const bool &success)
     {
         DynamicJsonDocument doc(1024);
-        doc["reqId"] = reqId;
         doc["success"] = success;
         doc["deviceId"] = deviceId;
         std::string response = "";
@@ -108,10 +105,9 @@ private:
         btClient->println(response.c_str());
     }
 
-    void responseWifiStatus(const std::string &reqId, const bool &success)
+    void responseWifiStatus(const bool &success)
     {
         DynamicJsonDocument doc(1024);
-        doc["reqId"] = reqId;
         doc["success"] = success;
         doc["connected"] = WiFi.isConnected();
         std::string response = "";
@@ -119,10 +115,9 @@ private:
         btClient->println(response.c_str());
     }
 
-    void scanWifi(const std::string &reqId, const bool &success)
+    void scanWifi(const bool &success)
     {
         DynamicJsonDocument doc(1024);
-        doc["reqId"] = reqId;
         doc["success"] = success;
         auto results = scanWiFiNetworks();
         JsonArray networks = doc.createNestedArray("networks");

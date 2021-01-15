@@ -4,9 +4,12 @@
 #include <memory>
 #include <ArduinoJson.h>
 #include <BluetoothSerial.h>
+#include <HTTPClient.h>
 #include "mqtt/MqttDevice.h"
 #include "utils/WifiUtils.h"
 
+#define HOME_PI_CLOUD_URL "http://1ecea3c289c9.ngrok.io"
+#define HOME_PI_CLOUD_REGISTER_API HOME_PI_CLOUD_URL "/api/home-control/validate-device"
 #define BT_BUFFER_MAX_SIZE 4096
 #define BT_BUFFER_TIMEOUT 3000
 #define TIMEOUT 30000
@@ -18,6 +21,7 @@ private:
     long lastBtReadTime;
     const std::string deviceId;
     std::shared_ptr<BluetoothSerial> btClient;
+    std::shared_ptr<HTTPClient> httpClient;
     std::shared_ptr<MqttDevice> device;
 
     void readBluetooth()
@@ -78,10 +82,8 @@ private:
         }
         if (action == "register")
         {
-            const std::string commandTopic = doc["commandTopic"].as<std::string>();
-            const std::string statusTopic = doc["statusTopic"].as<std::string>();
             const std::string token = doc["token"].as<std::string>();
-            success = setRegistrationData(commandTopic, statusTopic, token);
+            success = setRegistrationData(token);
         }
         responseRequestSuccess(success);
     }
@@ -164,9 +166,28 @@ private:
         }
     }
 
-    bool setRegistrationData(const std::string &commandTopic, const std::string &statusTopic, const std::string &token)
+    bool setRegistrationData(const std::string &token)
     {
         Serial.println("Setting registration data");
+
+        DynamicJsonDocument requestJson(1024);
+        requestJson["token"] = token;
+        String requestStr = "";
+        serializeJson(requestJson, requestStr);
+
+        httpClient->begin(HOME_PI_CLOUD_REGISTER_API);
+        httpClient->addHeader("Content-Type", "application/json");
+        int responseCode = httpClient->POST(requestStr);
+        if (responseCode != HTTP_CODE_OK)
+        {
+            return false;
+        }
+
+        DynamicJsonDocument responseJson(1024);
+        String responseStr = httpClient->getString();
+        deserializeJson(responseJson, responseStr);
+        const std::string commandTopic = responseJson["commandTopic"].as<std::string>();
+        const std::string statusTopic = responseJson["statusTopic"].as<std::string>();
         device->setCommandTopic(commandTopic);
         device->setStatusTopic(statusTopic);
         return true;
@@ -178,6 +199,7 @@ public:
         btBuffer = "";
         lastBtReadTime = 0;
         btClient = std::make_shared<BluetoothSerial>();
+        httpClient = std::make_shared<HTTPClient>();
     }
 
     void setup()

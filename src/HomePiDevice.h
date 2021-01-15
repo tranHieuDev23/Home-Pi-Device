@@ -21,7 +21,6 @@ private:
     long lastBtReadTime;
     const std::string deviceId;
     std::shared_ptr<BluetoothSerial> btClient;
-    std::shared_ptr<HTTPClient> httpClient;
     std::shared_ptr<MqttDevice> device;
 
     void readBluetooth()
@@ -175,37 +174,53 @@ private:
         String requestStr = "";
         serializeJson(requestJson, requestStr);
 
-        httpClient->begin(HOME_PI_CLOUD_REGISTER_API);
-        httpClient->addHeader("Content-Type", "application/json");
-        int responseCode = httpClient->POST(requestStr);
-        if (responseCode != HTTP_CODE_OK)
+        HTTPClient httpClient;
+        if (!httpClient.begin(HOME_PI_CLOUD_REGISTER_API))
         {
+            Serial.println("Failed to establish HTTP connection to Home Pi Cloud");
+            return false;
+        }
+        Serial.println("Successfully establish HTTP connection to Home Pi Cloud");
+
+        httpClient.addHeader("Content-Type", "application/json");
+        int responseCode = httpClient.POST(requestStr);
+        if (responseCode > 0 && responseCode != HTTP_CODE_OK)
+        {
+            httpClient.end();
+            Serial.print("Failed to register device, error code = ");
+            Serial.println(responseCode);
             return false;
         }
 
         DynamicJsonDocument responseJson(1024);
-        String responseStr = httpClient->getString();
+        String responseStr = httpClient.getString();
         deserializeJson(responseJson, responseStr);
+        const std::string broker = responseJson["broker"].as<std::string>();
+        const int port = responseJson["port"].as<int>();
         const std::string commandTopic = responseJson["commandTopic"].as<std::string>();
         const std::string statusTopic = responseJson["statusTopic"].as<std::string>();
+        httpClient.end();
+
+        device->setMqttBroker(broker, port);
         device->setCommandTopic(commandTopic);
         device->setStatusTopic(statusTopic);
+
+        Serial.println("Register device successfully");
         return true;
     }
 
 public:
-    HomePiDevice(const std::string &deviceId, std::shared_ptr<MqttDevice> device) : deviceId(deviceId), device(device)
+    HomePiDevice(const std::string &deviceId, std::shared_ptr<MqttDevice> device)
+        : deviceId(deviceId), device(device)
     {
         btBuffer = "";
         lastBtReadTime = 0;
         btClient = std::make_shared<BluetoothSerial>();
-        httpClient = std::make_shared<HTTPClient>();
     }
 
     void setup()
     {
         btClient->begin("Home Pi Light");
-        device->setMqttBroker("broker.hivemq.com", 1883);
     }
 
     void loop()

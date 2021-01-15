@@ -37,6 +37,10 @@
         "type_traits": "cpp",
         "utility": "cpp",
         "typeinfo": "cpp",
-        "string": "cpp"
+        "string": "cpp",
+        "unordered_set": "cpp",
+        "memory": "cpp",
+        "random": "cpp",
+        "system_error": "cpp"
     }
 }

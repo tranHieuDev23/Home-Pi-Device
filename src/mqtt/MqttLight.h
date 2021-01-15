@@ -8,41 +8,50 @@ class MqttLight : public MqttDevice
 {
 private:
     const uint8_t lightPin;
+    bool isOn;
 
 public:
-    MqttLight(const std::shared_ptr<PubSubClient> &mqttClient, uint8_t lightPin) : MqttDevice(mqttClient), lightPin(lightPin)
+    MqttLight(const std::string &deviceId, const std::shared_ptr<PubSubClient> &mqttClient, uint8_t lightPin)
+        : MqttDevice(deviceId, mqttClient), lightPin(lightPin)
     {
         pinMode(lightPin, OUTPUT);
+        isOn = false;
     }
 
-    void onCommand(const std::string &payload)
+    void onCommand(const JsonDocument &payload)
     {
-        DynamicJsonDocument doc(256);
-        deserializeJson(doc, payload.c_str());
-        const bool on = doc["on"].as<bool>();
-        if (on)
+        const std::string command = payload["command"].as<std::string>();
+        if (command == "turnOn")
         {
             turnOn();
         }
-        else
+        if (command == "turnOff")
         {
             turnOff();
         }
-        DynamicJsonDocument statusDoc(256);
-        statusDoc["isOn"] = on;
-        std::string statusMessage = "";
-        serializeJson(statusDoc, statusMessage);
-        publishStatus(statusMessage);
+        publishCurrentStatus();
+    }
+
+    void onStatusTopicSubscribed()
+    {
+        publishCurrentStatus();
+    }
+
+    void publishCurrentStatus()
+    {
+        publishStatus("isOn", isOn ? "true" : "false");
     }
 
     void turnOn()
     {
         digitalWrite(lightPin, HIGH);
+        isOn = true;
     }
 
     void turnOff()
     {
         digitalWrite(lightPin, LOW);
+        isOn = false;
     }
 };
 

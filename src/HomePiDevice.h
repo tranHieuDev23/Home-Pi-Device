@@ -19,7 +19,6 @@ class HomePiDevice
 private:
     std::string btBuffer;
     long lastBtReadTime;
-    const std::string deviceId;
     std::shared_ptr<BluetoothSerial> btClient;
     std::shared_ptr<MqttDevice> device;
 
@@ -100,7 +99,7 @@ private:
     {
         DynamicJsonDocument doc(1024);
         doc["success"] = success;
-        doc["deviceId"] = deviceId;
+        doc["deviceId"] = device->getDeviceId();
         std::string response = "";
         serializeJson(doc, response);
         btClient->println(response.c_str());
@@ -124,9 +123,6 @@ private:
         JsonArray networks = doc.createNestedArray("networks");
         for (const auto &item : results)
         {
-            Serial.print(item.ssid.c_str());
-            Serial.print(" ");
-            Serial.println(item.open);
             JsonObject itemObj = networks.createNestedObject();
             itemObj["ssid"] = item.ssid;
             itemObj["open"] = item.open;
@@ -175,6 +171,7 @@ private:
         serializeJson(requestJson, requestStr);
 
         HTTPClient httpClient;
+        httpClient.setReuse(false);
         if (!httpClient.begin(HOME_PI_CLOUD_REGISTER_API))
         {
             Serial.println("Failed to establish HTTP connection to Home Pi Cloud");
@@ -210,8 +207,7 @@ private:
     }
 
 public:
-    HomePiDevice(const std::string &deviceId, std::shared_ptr<MqttDevice> device)
-        : deviceId(deviceId), device(device)
+    HomePiDevice(std::shared_ptr<MqttDevice> device) : device(device)
     {
         btBuffer = "";
         lastBtReadTime = 0;

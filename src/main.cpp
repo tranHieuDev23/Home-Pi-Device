@@ -3,8 +3,8 @@
 
 auto wifiClient = std::make_shared<WiFiClient>();
 auto mqttClient = std::make_shared<PubSubClient>(*wifiClient);
-auto light = std::make_shared<MqttLight>(mqttClient, 0);
-HomePiDevice hpDevice("light:1", light);
+auto light = std::make_shared<MqttLight>("light:1", mqttClient, 0);
+HomePiDevice hpDevice(light);
 
 void setup()
 {

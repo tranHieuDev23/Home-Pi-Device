@@ -2,10 +2,12 @@
 #define MQTT_DEVICE_H
 #include <memory>
 #include <PubSubClient.h>
+#include <ArduinoJson.h>
 
 class MqttDevice
 {
 private:
+    const std::string deviceId;
     const std::shared_ptr<PubSubClient> mqttClient;
     std::shared_ptr<std::string> mqttBroker;
     std::shared_ptr<std::string> commandTopic;
@@ -27,6 +29,7 @@ private:
                 if (commandTopic != nullptr)
                 {
                     mqttClient->subscribe(commandTopic->c_str());
+                    onStatusTopicSubscribed();
                 }
             }
             else
@@ -39,7 +42,7 @@ private:
     }
 
 public:
-    MqttDevice(const std::shared_ptr<PubSubClient> &mqttClient) : mqttClient(mqttClient)
+    MqttDevice(const std::string &deviceId, const std::shared_ptr<PubSubClient> &mqttClient) : deviceId(deviceId), mqttClient(mqttClient)
     {
         mqttBroker = nullptr;
         commandTopic = nullptr;
@@ -52,9 +55,17 @@ public:
             {
                 payloadStr.push_back((char)payload[i]);
             }
-            onCommand(payloadStr);
+            DynamicJsonDocument payloadJson(256);
+            deserializeJson(payloadJson, payloadStr.c_str());
+            const std::string deviceId = payloadJson["deviceId"].as<std::string>();
+            if (getDeviceId() == deviceId)
+            {
+                onCommand(payloadJson);
+            }
         });
     }
+
+    const std::string getDeviceId() { return deviceId; }
 
     void setMqttBroker(const std::string &mqttBroker, const int &port)
     {
@@ -96,16 +107,24 @@ public:
         statusTopic = std::make_shared<std::string>(topic);
     }
 
-    void publishStatus(const std::string &payload)
+    void publishStatus(const std::string &fieldName, const std::string &fieldValue)
     {
         if (statusTopic == nullptr)
         {
             return;
         }
-        mqttClient->publish(statusTopic->c_str(), payload.c_str());
+        DynamicJsonDocument payload(256);
+        payload["deviceId"] = deviceId;
+        payload["fieldName"] = fieldName;
+        payload["fieldValue"] = fieldValue;
+        std::string payloadStr = "";
+        serializeJson(payload, payloadStr);
+        mqttClient->publish(statusTopic->c_str(), payloadStr.c_str());
     }
 
-    void virtual onCommand(const std::string &payload) = 0;
+    void virtual onCommand(const JsonDocument &payload) = 0;
+
+    void virtual onStatusTopicSubscribed() = 0;
 };
 
 #endif
